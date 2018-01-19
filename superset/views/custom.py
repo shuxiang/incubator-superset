@@ -26,7 +26,7 @@ from flask_appbuilder.models.sqla.interface import SQLAInterface
 
 #Get all reports:
 #/report_builder/api/report GET
-@app.route('/report_builder/api/report')
+@app.route('/report_builder/api/report', methods=('GET', 'OPTIONS'))
 def get_all_report():
     #sq = SavedQuery.query.all()
     dm = SQLAInterface(SavedQuery)
@@ -49,7 +49,13 @@ def get_all_report():
             'sql':o.sql or '',
             'description':desc,
             })
-    return jsonify(data)
+
+    resp = jsonify(data)
+    resp.headers['Access-Control-Allow-Origin'] = "*"
+    resp.headers['Access-Control-Allow-Credentials'] = 'true'
+    resp.headers['Access-Control-Allow-Headers'] = '*'
+    resp.headers['Access-Control-Allow-Methods'] = '*'
+    return resp
 
 # created_on, changed_on, id, user_id, db_id, label, schema, sql, description, 
 # displayfield_set
@@ -57,7 +63,7 @@ def get_all_report():
 
 #Get report:
 #/report_builder/api/report/<id> GET
-@app.route('/report_builder/api/report/<int:id>', methods=('GET', 'POST'))
+@app.route('/report_builder/api/report/<int:id>', methods=('GET', 'POST', 'OPTIONS'))
 def get_one_report(id):
     o = db.session.query(SavedQuery).filter_by(id=id).first()
     desc = {}
@@ -67,7 +73,7 @@ def get_one_report(id):
         pass
 
     if request.method == 'GET':
-        return jsonify({'id':o.id, 
+        resp = jsonify({'id':o.id, 
             'created_on':o.created_on.strftime('%Y-%m-%d'), 
             'changed_on':o.changed_on.strftime('%Y-%m-%d'),
             'user_id':o.user_id or '',
@@ -77,6 +83,11 @@ def get_one_report(id):
             'sql':o.sql or '',
             'description':desc,
             })
+        resp.headers['Access-Control-Allow-Origin'] = "*"
+        resp.headers['Access-Control-Allow-Credentials'] = 'true'
+        resp.headers['Access-Control-Allow-Headers'] = '*'
+        resp.headers['Access-Control-Allow-Methods'] = '*'
+        return resp
     
     elif request.method == 'POST':
         qjson = request.json
@@ -169,7 +180,7 @@ def get_one_report(id):
                         query_id=cquery_id, return_results=True,
                         template_params={})
 
-            return jsonify({
+            resp = jsonify({
                     'data':data['data'],
                     'id':id,
                     'label':label,
@@ -188,7 +199,19 @@ def get_one_report(id):
                     'status': 'success',
                 })
 
-        return 'ok'
+            resp.headers['Access-Control-Allow-Origin'] = "*"
+            resp.headers['Access-Control-Allow-Credentials'] = 'true'
+            resp.headers['Access-Control-Allow-Headers'] = '*'
+            resp.headers['Access-Control-Allow-Methods'] = '*'
+            return resp
+    
+
+    resp = Response('OK')
+    resp.headers['Access-Control-Allow-Origin'] = "*"
+    resp.headers['Access-Control-Allow-Credentials'] = 'true'
+    resp.headers['Access-Control-Allow-Headers'] = '*'
+    resp.headers['Access-Control-Allow-Methods'] = '*'
+    return resp
 
 
 # Exporting using xlsx
@@ -219,7 +242,12 @@ def download_one_report(id, query_id):
     #else:
     #    ret = jsonify({'displayfield_set': desc['displayfield_set'], 'data': data['data']})
 
-    return ret
+    resp = ret
+    resp.headers['Access-Control-Allow-Origin'] = "*"
+    resp.headers['Access-Control-Allow-Credentials'] = 'true'
+    resp.headers['Access-Control-Allow-Headers'] = '*'
+    resp.headers['Access-Control-Allow-Methods'] = '*'
+    return resp
 
 #================= utils =====================
 code_map = ( 
