@@ -216,7 +216,7 @@ def get_one_report(id):
 
 # Exporting using xlsx
 # GET request on /report_builder/report/<id>/download_xlsx/
-@app.route('/report_builder/api/report/<int:id>/download/<int:query_id>' method=('GET', 'OPTIONS'))
+@app.route('/report_builder/api/report/<int:id>/download/<int:query_id>' methods=('GET', 'OPTIONS'))
 def download_one_report(id, query_id):
     o = db.session.query(SavedQuery).filter_by(id=id).first()
     desc = {}
