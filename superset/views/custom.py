@@ -101,8 +101,12 @@ def get_one_report(id):
         mydb = session.query(models.Database).filter_by(id=database_id).first()
 
         # paginate
-        page = qjson.get('page', 1) 
-        per_page = qjson.get('per_page', app.config['REPORT_PER_PAGE']) 
+        page = request.args.get('_start', 0)
+        if not page:
+            page = qjson.get('page', 1)
+        per_page = request.args.get('_limit', 0)
+        if not per_page:
+            per_page = qjson.get('per_page', app.config['REPORT_PER_PAGE'])
         
 
         hkey = get_hash_key()
@@ -198,6 +202,8 @@ def get_one_report(id):
                     'report_file': url_for('download_one_report', id=id, query_id=data['query_id']),
                     'status': 'success',
                 })
+
+            resp.headers['x-total-count'] = str(cdata['data'][0]['num'])
 
             resp.headers['Access-Control-Allow-Origin'] = "*"
             resp.headers['Access-Control-Allow-Credentials'] = 'true'
