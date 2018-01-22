@@ -24,7 +24,6 @@ RUN pip install Flask-Login
 RUN pip install Flask-SQLALchemy
 RUN pip install Flask-Script
 RUN pip install PyMySQL
-RUN pip install MySQL-python
 RUN pip install Flask-Migrate
 RUN pip install Flask-RESTful
 RUN pip install Flask-Cache
