@@ -90,7 +90,7 @@ def get_one_report(id):
         return resp
     
     elif request.method == 'POST':
-        qjson = request.json
+        qjson = request.json or {}
         print request.json
 
         sql = o.sql
