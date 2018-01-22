@@ -41,11 +41,14 @@ RUN apt-get install -y python-dev
 RUN apt-get install -y libsasl2-dev 
 RUN apt-get install -y libldap2-dev
 RUN pip install superset
-RUN pip uninstall superset
+RUN pip uninstall -y superset
 
 
 RUN mkdir -p /opt/superset
 COPY . /opt/superset/
+WORKDIR /opt/superset/assets
+RUN yarn
+RUN yarn run build
 
 
 # install gunicorn
