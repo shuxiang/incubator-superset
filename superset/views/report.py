@@ -187,7 +187,13 @@ def get_one_report(id):
                         template_params={})
 
             if data['status'] == 'failed':
-                return jsonify(data)
+                resp = jsonify(data)
+                resp.headers['x-total-count'] = '0'
+                resp.headers['Access-Control-Allow-Origin'] = "*"
+                resp.headers['Access-Control-Allow-Credentials'] = 'true'
+                resp.headers['Access-Control-Allow-Headers'] = '*'
+                resp.headers['Access-Control-Allow-Methods'] = '*'
+                return resp
 
             resp = jsonify({
                     'data':data['data'],
