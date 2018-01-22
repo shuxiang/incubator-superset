@@ -45,7 +45,7 @@ RUN pip uninstall -y superset
 
 RUN mkdir -p /opt/superset
 COPY . /opt/superset/
-WORKDIR /opt/superset/assets
+WORKDIR /opt/superset/superset/assets
 RUN yarn
 RUN yarn run build
 
