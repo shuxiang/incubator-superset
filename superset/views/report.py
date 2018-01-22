@@ -68,9 +68,9 @@ def get_one_report(id):
     o = db.session.query(SavedQuery).filter_by(id=id).first()
     desc = {}
     try:
-        desc = json.loads(o.description)
-    except ValueError:
-        pass
+        desc = json.loads(o.description.encode('utf8'))
+    except ValueError as e:
+        print(e)
 
     if request.method == 'GET':
         resp = jsonify({'id':o.id, 
@@ -91,6 +91,7 @@ def get_one_report(id):
     
     elif request.method == 'POST':
         qjson = request.json
+        print request.json
 
         sql = o.sql
         database_id = o.db_id
@@ -106,7 +107,7 @@ def get_one_report(id):
             page = qjson.get('page', 1)
         per_page = request.args.get('_limit', 0)
         if not per_page:
-            per_page = qjson.get('per_page', app.config['REPORT_PER_PAGE'])
+            per_page = qjson.get('per_page', app.config.get('REPORT_PER_PAGE', 50))
         
 
         hkey = get_hash_key()
@@ -121,21 +122,23 @@ def get_one_report(id):
 
         fs = []
         for f in filters:
-            if f['type'] == 'range':
-                fs.append("(_.%(field)s >= '%(value1)s' and _.%(field)s < '%(value2)s')"%f)
-            elif f['type'] == 'like':
-                fs.append("_.%(field)s like '%%%(value1)s%%'"%f)
+            if f['type'] == 'and':
+                _where = " and ".join([gen_where_filter(subf) for subf in f['filterfield_set']])
+                fs.append("( %s )"%_where)
+            if f['type'] == 'or':
+                _where = " or ".join([gen_where_filter(subf) for subf in f['filterfield_set']])
+                fs.append("( %s )"%_where)
             else:
-                fs.append("_.%(field)s %(type)s '%(value1)s'")
+                fs.append(gen_where_filter(f))
 
         where = " where "+(" and ".join(fs)) if fs else ""
 
-        # count_sql = "SELECT count(1) as num FROM (%s) _"%sql
-        # sql = "SELECT * FROM (%s) _ LIMIT %s,%s"%(sql, (page-1)*per_page, per_page) 
         # # sql can't end with `;` , complicated sql use select .. as ..
 
         count_sql = "SELECT count(1) as num FROM (%s) _ %s"%(sql,where)
         sql = "SELECT * FROM (%s) _ %s %s LIMIT %s,%s"%(sql, where, sort, (page-1)*per_page, per_page) 
+
+        print sql, '============='
 
         if True:
             query = Query(
@@ -149,7 +152,7 @@ def get_one_report(id):
                 status=QueryStatus.RUNNING,
                 sql_editor_id=hkey[0]+hkey[1],
                 tmp_table_name='',
-                user_id=int(g.user.get_id()),
+                user_id=1, #int(g.user.get_id()),
                 client_id=hkey[2]+hkey[3],
             )
             session.add(query)
@@ -165,7 +168,7 @@ def get_one_report(id):
                 status=QueryStatus.RUNNING,
                 sql_editor_id=hkey[0]+hkey[1],
                 tmp_table_name='',
-                user_id=int(g.user.get_id()),
+                user_id=1, #int(g.user.get_id()),
                 client_id=hkey[0]+hkey[1],
             )
             session.add(cquery)
@@ -175,7 +178,6 @@ def get_one_report(id):
             query_id = query.id
             cquery_id =cquery.id
 
-
             data = sql_lab.get_sql_results(
                         query_id=query_id, return_results=True,
                         template_params={})
@@ -183,6 +185,9 @@ def get_one_report(id):
             cdata = sql_lab.get_sql_results(
                         query_id=cquery_id, return_results=True,
                         template_params={})
+
+            if data['status'] == 'failed':
+                return jsonify(data)
 
             resp = jsonify({
                     'data':data['data'],
@@ -219,6 +224,15 @@ def get_one_report(id):
     resp.headers['Access-Control-Allow-Methods'] = '*'
     return resp
 
+def gen_where_filter(f):
+    ret = ''
+    if f['type'] == 'range':
+        ret = "(_.%(field)s >= '%(value1)s' and _.%(field)s < '%(value2)s')"%f
+    elif f['type'] == 'like':
+        ret = "_.%(field)s like '%%%(value1)s%%'"%f
+    elif f['type'] in ('>', '<', '<=', '>=', '='):
+        ret = "_.%(field)s %(type)s '%(value1)s'"
+    return ret
 
 # Exporting using xlsx
 # GET request on /report_builder/report/<id>/download_xlsx/
@@ -316,3 +330,25 @@ def gen_xlsx(title, table, fname):
     return send_file(output, 
         mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", 
         as_attachment=True, attachment_filename='%s.xlsx'%fname)
+
+
+# # SELECT[ALL|DISTINCT|DISTINCTROW|TOP]
+#     {*|talbe.*|[table.]field1[AS alias1][,[table.]field2[AS alias2][,…]]}
+#     FROM tableexpression[,…][IN externaldatabase]
+#     [WHERE…]
+#     [GROUP BY…]
+#     [HAVING…]
+#     [ORDER BY…]
+
+
+# SELECT [ ALL | DISTINCT [ ON ( expression [, ...] ) ] ]
+#     * | expression [ AS output_name ] [, ...]
+#     [ FROM from_item [, ...] ]
+#     [ WHERE condition ]
+#     [ GROUP BY expression [, ...] ]
+#     [ HAVING condition [, ...] ]
+#     [ { UNION | INTERSECT | EXCEPT } [ ALL ] select ]
+#     [ ORDER BY expression [ ASC | DESC | USING operator ] [, ...] ]
+#     [ FOR UPDATE [ OF tablename [, ...] ] ]
+#     [ LIMIT { count | ALL } ]
+#     [ OFFSET start ]

@@ -104,6 +104,8 @@ url: POST /report_builder/api/report/<id>
 获取该报表接口描述
 ```
 id 报表id 必须
+_start query string 查询页，默认1
+_limit query string 每页数量，默认暂定50
 ```
 
 参数(POST): 
@@ -126,6 +128,10 @@ id 报表id 必须
 }
 
 ```
+
+返回(headers):
+----------
+x-total-count 总条数
 
 
 返回(POST):
