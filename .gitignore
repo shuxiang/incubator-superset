@@ -2,6 +2,8 @@
 yarn-error.log
 _modules
 superset/assets/coverage/*
+superset/assets/dist/*
+superset/assets/node_modules
 changelog.sh
 .DS_Store
 .coverage
@@ -9,15 +11,12 @@ _build
 _static
 _images
 _modules
-superset/bin/supersetc
 env_py3
 .eggs
-build
 *.db
 tmp
 local_config.py
 env
-dist
 superset.egg-info/
 app.db
 *.bak
@@ -31,12 +30,6 @@ app.db
 *.js.map
 node_modules
 npm-debug.log
-yarn.lock
-superset/assets/version_info.json
 
 # IntelliJ
 *.iml
-
-# dev temp files
-superset/assets/package-lock.json
-run.py
