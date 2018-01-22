@@ -15,7 +15,6 @@ env_py3
 build
 *.db
 tmp
-superset_config.py
 local_config.py
 env
 dist
