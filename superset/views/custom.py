@@ -123,7 +123,7 @@ def get_one_report(id):
             if  'and' in f:
                 _where = " and ".join([gen_where_filter(subf) for subf in f['and']])
                 fs.append("( %s )"%_where)
-            if 'or' in f:
+            elif 'or' in f:
                 _where = " or ".join([gen_where_filter(subf) for subf in f['or']])
                 fs.append("( %s )"%_where)
             else:
