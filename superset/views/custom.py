@@ -10,6 +10,7 @@ from pprint import pprint
 import csv
 import StringIO
 import xlsxwriter
+from functools import wraps
 
 from flask import abort, flash, g, get_flashed_messages, redirect, Response
 from flask import jsonify, request, url_for, make_response, send_file
@@ -24,9 +25,25 @@ import superset.models.core as models
 from superset.utils import has_access, merge_extra_filters, QueryStatus
 from flask_appbuilder.models.sqla.interface import SQLAInterface
 
+CROS_HEADERS = {
+    'Access-Control-Allow-Origin': "*",
+    'Access-Control-Allow-Credentials': 'true',
+    'Access-Control-Allow-Headers': '*',
+    'Access-Control-Allow-Methods': '*'
+    }
+
+def cros_decorater(func):
+    @wraps(func)
+    def decorated_view(*args, **kwargs):
+        ret = func(*args, **kwargs)
+        ret.headers.extend(CROS_HEADERS)
+        return ret
+    return decorated_view
+
 #Get all reports:
 #/report_builder/api/report GET
 @app.route('/report_builder/api/report', methods=('GET', 'OPTIONS'))
+@cros_decorater
 def get_all_report():
     #sq = SavedQuery.query.all()
     dm = SQLAInterface(SavedQuery)
@@ -51,10 +68,6 @@ def get_all_report():
             })
 
     resp = jsonify(data)
-    resp.headers['Access-Control-Allow-Origin'] = "*"
-    resp.headers['Access-Control-Allow-Credentials'] = 'true'
-    resp.headers['Access-Control-Allow-Headers'] = '*'
-    resp.headers['Access-Control-Allow-Methods'] = '*'
     return resp
 
 # created_on, changed_on, id, user_id, db_id, label, schema, sql, description, 
@@ -64,6 +77,7 @@ def get_all_report():
 #Get report:
 #/report_builder/api/report/<id> GET
 @app.route('/report_builder/api/report/<int:id>', methods=('GET', 'POST', 'OPTIONS'))
+@cros_decorater
 def get_one_report(id):
     o = db.session.query(SavedQuery).filter_by(id=id).first()
     desc = {}
@@ -83,10 +97,6 @@ def get_one_report(id):
     #         #'sql':o.sql or '',
     #         'description':desc,
     #         })
-    #     resp.headers['Access-Control-Allow-Origin'] = "*"
-    #     resp.headers['Access-Control-Allow-Credentials'] = 'true'
-    #     resp.headers['Access-Control-Allow-Headers'] = '*'
-    #     resp.headers['Access-Control-Allow-Methods'] = '*'
     #     return resp
     
     # elif request.method == 'POST':
@@ -187,10 +197,6 @@ def get_one_report(id):
             if data['status'] == 'failed':
                 resp = jsonify(data)
                 resp.headers['x-total-count'] = '0'
-                resp.headers['Access-Control-Allow-Origin'] = "*"
-                resp.headers['Access-Control-Allow-Credentials'] = 'true'
-                resp.headers['Access-Control-Allow-Headers'] = '*'
-                resp.headers['Access-Control-Allow-Methods'] = '*'
                 return resp
 
             resp = jsonify({
@@ -214,19 +220,10 @@ def get_one_report(id):
                 })
 
             resp.headers['x-total-count'] = str(cdata['data'][0]['num'])
-
-            resp.headers['Access-Control-Allow-Origin'] = "*"
-            resp.headers['Access-Control-Allow-Credentials'] = 'true'
-            resp.headers['Access-Control-Allow-Headers'] = '*'
-            resp.headers['Access-Control-Allow-Methods'] = '*'
             return resp
     
 
     resp = Response('OK')
-    resp.headers['Access-Control-Allow-Origin'] = "*"
-    resp.headers['Access-Control-Allow-Credentials'] = 'true'
-    resp.headers['Access-Control-Allow-Headers'] = '*'
-    resp.headers['Access-Control-Allow-Methods'] = '*'
     return resp
 
 def gen_where_filter(f):
@@ -274,6 +271,7 @@ def gen_where_filter(f):
 # Exporting using xlsx
 # GET request on /report_builder/report/<id>/download_xlsx/
 @app.route('/report_builder/api/report/<int:id>/download/<int:query_id>', methods=('GET', 'OPTIONS'))
+@cros_decorater
 def download_one_report(id, query_id):
     o = db.session.query(SavedQuery).filter_by(id=id).first()
     desc = {}
@@ -299,12 +297,7 @@ def download_one_report(id, query_id):
     #else:
     #    ret = jsonify({'displayfield_set': desc['displayfield_set'], 'data': data['data']})
 
-    resp = ret
-    resp.headers['Access-Control-Allow-Origin'] = "*"
-    resp.headers['Access-Control-Allow-Credentials'] = 'true'
-    resp.headers['Access-Control-Allow-Headers'] = '*'
-    resp.headers['Access-Control-Allow-Methods'] = '*'
-    return resp
+    return ret
 
 #================= utils =====================
 code_map = ( 
