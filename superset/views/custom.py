@@ -25,6 +25,9 @@ import superset.models.core as models
 from superset.utils import has_access, merge_extra_filters, QueryStatus
 from flask_appbuilder.models.sqla.interface import SQLAInterface
 
+from superset.models.custom_models import CompanyReportMap
+
+
 CROS_HEADERS = {
     'Access-Control-Allow-Origin': "*",
     'Access-Control-Allow-Credentials': 'true',
@@ -39,6 +42,7 @@ def cros_decorater(func):
         ret.headers.extend(CROS_HEADERS)
         return ret
     return decorated_view
+
 
 #Get all reports:
 #/report_builder/api/report GET
@@ -79,6 +83,9 @@ def get_all_report():
 @app.route('/report_builder/api/report/<int:id>', methods=('GET', 'POST', 'OPTIONS'))
 @cros_decorater
 def get_one_report(id):
+    return _get_one_report(id)
+
+def _get_one_report(id):
     o = db.session.query(SavedQuery).filter_by(id=id).first()
     desc = {}
     try:
@@ -298,6 +305,20 @@ def download_one_report(id, query_id):
     #    ret = jsonify({'displayfield_set': desc['displayfield_set'], 'data': data['data']})
 
     return ret
+
+
+# New Style Report
+@app.route('/report_builder/api/report_map/<path:name>', methods=('GET', 'OPTIONS'))
+@cros_decorater
+def report_map_api(name):
+    company = request.args.get('company', '')
+    o = db.session.query(CompanyReportMap).filter_by(company=company, api_name=name).first()
+    if not o:
+        return 'Not Found', 404
+
+    _get_one_report(o.report_id)
+
+
 
 #================= utils =====================
 code_map = ( 

@@ -10,6 +10,7 @@ from pprint import pprint
 import csv
 import StringIO
 import xlsxwriter
+from functools import wraps
 
 from flask import abort, flash, g, get_flashed_messages, redirect, Response
 from flask import jsonify, request, url_for, make_response, send_file
@@ -24,9 +25,25 @@ import superset.models.core as models
 from superset.utils import has_access, merge_extra_filters, QueryStatus
 from flask_appbuilder.models.sqla.interface import SQLAInterface
 
+CROS_HEADERS = {
+    'Access-Control-Allow-Origin': "*",
+    'Access-Control-Allow-Credentials': 'true',
+    'Access-Control-Allow-Headers': '*',
+    'Access-Control-Allow-Methods': '*'
+    }
+
+def cros_decorater(func):
+    @wraps(func)
+    def decorated_view(*args, **kwargs):
+        ret = func(*args, **kwargs)
+        ret.headers.extend(CROS_HEADERS)
+        return ret
+    return decorated_view
+
 #Get all reports:
 #/report_builder/api/report GET
 @app.route('/report_builder/api/report', methods=('GET', 'OPTIONS'))
+@cros_decorater
 def get_all_report():
     #sq = SavedQuery.query.all()
     dm = SQLAInterface(SavedQuery)
@@ -51,10 +68,6 @@ def get_all_report():
             })
 
     resp = jsonify(data)
-    resp.headers['Access-Control-Allow-Origin'] = "*"
-    resp.headers['Access-Control-Allow-Credentials'] = 'true'
-    resp.headers['Access-Control-Allow-Headers'] = '*'
-    resp.headers['Access-Control-Allow-Methods'] = '*'
     return resp
 
 # created_on, changed_on, id, user_id, db_id, label, schema, sql, description, 
@@ -64,6 +77,7 @@ def get_all_report():
 #Get report:
 #/report_builder/api/report/<id> GET
 @app.route('/report_builder/api/report/<int:id>', methods=('GET', 'POST', 'OPTIONS'))
+@cros_decorater
 def get_one_report(id):
     o = db.session.query(SavedQuery).filter_by(id=id).first()
     desc = {}
@@ -73,25 +87,30 @@ def get_one_report(id):
         print(e)
 
     if request.method == 'GET':
-        resp = jsonify({'id':o.id, 
-            'created_on':o.created_on.strftime('%Y-%m-%d'), 
-            'changed_on':o.changed_on.strftime('%Y-%m-%d'),
-            'user_id':o.user_id or '',
-            'db_id':o.db_id or '',
-            'label':o.label or '',
-            'schema':o.schema or '',
-            #'sql':o.sql or '',
-            'description':desc,
-            })
-        resp.headers['Access-Control-Allow-Origin'] = "*"
-        resp.headers['Access-Control-Allow-Credentials'] = 'true'
-        resp.headers['Access-Control-Allow-Headers'] = '*'
-        resp.headers['Access-Control-Allow-Methods'] = '*'
-        return resp
+    #     resp = jsonify({'id':o.id, 
+    #         'created_on':o.created_on.strftime('%Y-%m-%d'), 
+    #         'changed_on':o.changed_on.strftime('%Y-%m-%d'),
+    #         'user_id':o.user_id or '',
+    #         'db_id':o.db_id or '',
+    #         'label':o.label or '',
+    #         'schema':o.schema or '',
+    #         #'sql':o.sql or '',
+    #         'description':desc,
+    #         })
+    #     return resp
     
-    elif request.method == 'POST':
-        qjson = request.json or {}
-        print request.json
+    # elif request.method == 'POST':
+        # qjson = request.json or {}
+        # print request.json
+        _q = json.loads(request.args.get('q', "{}"))
+        page = int(request.args.get('page', 1))
+        per_page = int(request.args.get('results_per_page', app.config.get('REPORT_PER_PAGE', 50)))
+
+
+        _filters = _q.get('filters', [])
+        _order_by = _q.get('order_by', [])
+        _group_by = _q.get('group_by', [])
+        _single = _q.get('single', False)
 
         sql = o.sql
         database_id = o.db_id
@@ -101,32 +120,21 @@ def get_one_report(id):
         session = db.session()
         mydb = session.query(models.Database).filter_by(id=database_id).first()
 
-        # paginate
-        page = request.args.get('_start', 0)
-        if not page:
-            page = qjson.get('page', 1)
-        per_page = request.args.get('_limit', 0)
-        if not per_page:
-            per_page = qjson.get('per_page', app.config.get('REPORT_PER_PAGE', 50))
-        
 
         hkey = get_hash_key()
-
         # # parse config; filters and fields and sorts
-        # qsort = ["ds","desc"]
-        qsort = qjson.get('sort',[])
-        sort = " order by _.%s %s"%(qsort[0], qsort[1]) if qsort else ""
-        # date transfer problem solve after
-        #filters = [ {"field":"ds", "type":"range", "value1":"2016-01-01", "value2":"2017-01-03", "help":u"date字段"} ]
-        filters = qjson.get('filterfield_set', [])
+        # # order by [{"field": <fieldname>, "direction": <directionname>}]
+        qsort = ", ".join(["_.%s %s"%(ob['field'], ob['direction']) for ob in _order_by])
+        sort = (" order by " + qsort) if qsort else ""
+        # [{"name": <fieldname>, "op": <operatorname>, "val": <argument>}]
 
         fs = []
-        for f in filters:
-            if f['type'] == 'and':
-                _where = " and ".join([gen_where_filter(subf) for subf in f['filterfield_set']])
+        for f in _filters:
+            if  'and' in f:
+                _where = " and ".join([gen_where_filter(subf) for subf in f['and']])
                 fs.append("( %s )"%_where)
-            if f['type'] == 'or':
-                _where = " or ".join([gen_where_filter(subf) for subf in f['filterfield_set']])
+            elif 'or' in f:
+                _where = " or ".join([gen_where_filter(subf) for subf in f['or']])
                 fs.append("( %s )"%_where)
             else:
                 fs.append(gen_where_filter(f))
@@ -174,7 +182,7 @@ def get_one_report(id):
             session.add(cquery)
 
             session.flush()
-            db.session.commit()
+            session.commit()
             query_id = query.id
             cquery_id =cquery.id
 
@@ -189,10 +197,6 @@ def get_one_report(id):
             if data['status'] == 'failed':
                 resp = jsonify(data)
                 resp.headers['x-total-count'] = '0'
-                resp.headers['Access-Control-Allow-Origin'] = "*"
-                resp.headers['Access-Control-Allow-Credentials'] = 'true'
-                resp.headers['Access-Control-Allow-Headers'] = '*'
-                resp.headers['Access-Control-Allow-Methods'] = '*'
                 return resp
 
             resp = jsonify({
@@ -207,42 +211,67 @@ def get_one_report(id):
                     'pages': get_pages(cdata['data'][0]['num'], per_page),
                     'total':cdata['data'][0]['num'],
                     'rows':data['query']['rows'],
-                    'sort':qsort,
+                    'sort':_order_by,
                     'changed_on':data['query']['changed_on'],
                     'displayfield_set': desc['displayfield_set'],
+                    'q': _q,
                     'report_file': url_for('download_one_report', id=id, query_id=data['query_id']),
                     'status': 'success',
                 })
 
             resp.headers['x-total-count'] = str(cdata['data'][0]['num'])
-
-            resp.headers['Access-Control-Allow-Origin'] = "*"
-            resp.headers['Access-Control-Allow-Credentials'] = 'true'
-            resp.headers['Access-Control-Allow-Headers'] = '*'
-            resp.headers['Access-Control-Allow-Methods'] = '*'
             return resp
     
 
     resp = Response('OK')
-    resp.headers['Access-Control-Allow-Origin'] = "*"
-    resp.headers['Access-Control-Allow-Credentials'] = 'true'
-    resp.headers['Access-Control-Allow-Headers'] = '*'
-    resp.headers['Access-Control-Allow-Methods'] = '*'
     return resp
 
 def gen_where_filter(f):
+
+    # ==, eq, equals, equals_to
+    # !=, neq, does_not_equal, not_equal_to
+    # >, gt, <, lt
+    # >=, ge, gte, geq, <=, le, lte, leq
+    # in, not_in
+    # is_null, is_not_null
+    # like
+    # has
+    # any
+    op = f['op']
+    name = f['name']
+    val = f['val']
+
     ret = ''
-    if f['type'] == 'range':
-        ret = "(_.%(field)s >= '%(value1)s' and _.%(field)s < '%(value2)s')"%f
-    elif f['type'] == 'like':
-        ret = "_.%(field)s like '%%%(value1)s%%'"%f
-    elif f['type'] in ('>', '<', '<=', '>=', '='):
-        ret = "_.%(field)s %(type)s '%(value1)s'"
+    if op == 'like':
+        #ret = "_.%(name)s like '%%%(val)s%%'"%f
+        ret = "_.%(name)s like '%(val)s'"%f
+    elif op in ('==', 'eq', 'equals', 'equals_to', '='):
+        ret = "_.%(name)s = '%(val)s'" %f
+    elif op in ('!=', 'neq', 'does_not_equal', 'not_equal_to'):
+        ret = "_.%(name)s != '%(val)s'" %f
+    elif op in ('>=', 'ge', 'gte', 'geq'):
+        ret = "_.%(name)s >= '%(val)s'" %f
+    elif op in ('>', 'gt'):
+        ret = "_.%(name)s > '%(val)s'" %f
+    elif op in ('<=', 'le', 'lte', 'leq'):
+        ret = "_.%(name)s <= '%(val)s'" %f
+    elif op in ('<', 'lt'):
+        ret = "_.%(name)s < '%(val)s'" %f
+    elif op == 'in':
+        ret = "_.%(name)s in %(val)s" %f
+    elif op == 'not_in':
+        ret = "_.%(name)s not in %(val)s" %f
+    elif op == 'is_null':
+        ret = "_.%(name)s is null" %f
+    elif op == 'is_not_null':
+        ret = "_.%(name)s is not null" %f
+    # has any not support
     return ret
 
 # Exporting using xlsx
 # GET request on /report_builder/report/<id>/download_xlsx/
 @app.route('/report_builder/api/report/<int:id>/download/<int:query_id>', methods=('GET', 'OPTIONS'))
+@cros_decorater
 def download_one_report(id, query_id):
     o = db.session.query(SavedQuery).filter_by(id=id).first()
     desc = {}
@@ -268,12 +297,7 @@ def download_one_report(id, query_id):
     #else:
     #    ret = jsonify({'displayfield_set': desc['displayfield_set'], 'data': data['data']})
 
-    resp = ret
-    resp.headers['Access-Control-Allow-Origin'] = "*"
-    resp.headers['Access-Control-Allow-Credentials'] = 'true'
-    resp.headers['Access-Control-Allow-Headers'] = '*'
-    resp.headers['Access-Control-Allow-Methods'] = '*'
-    return resp
+    return ret
 
 #================= utils =====================
 code_map = ( 
