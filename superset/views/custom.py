@@ -308,15 +308,59 @@ def download_one_report(id, query_id):
 
 
 # New Style Report
-@app.route('/report_builder/api/report_map/<path:name>', methods=('GET', 'OPTIONS'))
+@app.route('/report_builder/api/report_map/<path:name>', methods=('GET', 'OPTIONS', 'POST', 'PUT'))
 @cros_decorater
-def report_map_api(name):
+def report_map_api(name='ACTION'):
+    if request.method == 'POST':
+        req = request.json
+        company = req['company']
+        api_name = req['api_name']
+
+        if db.session.query(CompanyReportMap).filter_by(company=company, api_name=api_name).count() > 0:
+            resp = Response('exist report of company: %s , api name: %s '%(company, api_name))
+            resp.status_code = 422
+            return resp
+
+        crm = CompanyReportMap()
+        crm.company = company
+        crm.api_name = api_name
+        crm.remark = req.get('remark', '')
+        crm.report_id = req['report_id']
+
+        db.session.add(crm)
+        db.session.commit()
+
+        return jsonify(req)
+
+    elif request.method == 'PUT':
+        req = request.json
+        company = req['company']
+        api_name = req['api_name']
+
+        crm = db.session.query(CompanyReportMap).filter_by(company=company, api_name=api_name).first()
+        if not crm:
+            esp = Response('Not Found')
+            resp.status_code = 404
+            return resp
+        else:
+            crm.report_id = req['report_id']
+            crm.remark = req.get('remark', crm.remark)
+        db.session.commit()
+
+        return jsonify(req)
+
+    elif request.method == 'OPTIONS':
+        res = [{'company':c.company, 'api_name':c.api_name, 'report_id':c.report_id, 'remark':c.remark} for c in db.session.query(CompanyReportMap).all()]
+        return jsonify(res)
+    # GET
     company = request.args.get('company', '')
     o = db.session.query(CompanyReportMap).filter_by(company=company, api_name=name).first()
     if not o:
-        return 'Not Found', 404
+        resp = Response('Not Found')
+        resp.status_code = 404
+        return resp
 
-    _get_one_report(o.report_id)
+    return _get_one_report(o.report_id)
 
 
 
