@@ -63,6 +63,7 @@ ENTRYPOINT gunicorn manage:app -c gun.conf
 
 # port
 EXPOSE 5000
+EXPOSE 8088
 
 
 ## Create an admin user (you will be prompted to set username, first and last name before setting a password)
