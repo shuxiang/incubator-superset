@@ -20,6 +20,11 @@ from superset import (
     app, appbuilder, cache, db, results_backend, security, sm, sql_lab, utils,
     viz,
 )
+from .base import (
+    api, BaseSupersetView, CsvResponse, DeleteMixin,
+    generate_download_headers, get_error_msg, get_user_roles,
+    json_error_response, SupersetFilter, SupersetModelView, YamlExportMixin,
+)
 from superset.models.sql_lab import Query, SavedQuery
 import superset.models.core as models
 from superset.utils import has_access, merge_extra_filters, QueryStatus
@@ -362,6 +367,36 @@ def report_map_api(name='ACTION'):
 
     return _get_one_report(o.report_id)
 
+
+
+# custom model view
+class CompanyReportMapView(SupersetModelView, DeleteMixin):  # noqa
+    datamodel = SQLAInterface(CompanyReportMap)
+
+    list_title = _('List CompanyReportMap')
+    show_title = _('Show CompanyReportMap')
+    add_title = _('Add CompanyReportMap')
+    edit_title = _('Edit CompanyReportMap')
+
+    list_columns = [
+        'id', 'company', 'api_name', 'report_id', 'remark']
+    order_columns = [
+        'company', 'api_name', 'report_id']
+    search_exclude_columns = (
+        'company', 'api_name', 'report_id',)
+    add_columns = list_columns
+    edit_columns = list_columns
+    show_columns = list_columns
+
+appbuilder.add_view(
+    CompanyReportMapView,
+    'CompanyReportMap',
+    label=__('CompanyReportMapView'),
+    icon='fa-database',
+    category='Sources',
+    category_label=__('Sources'),
+    category_icon='fa-database',)
+# end custom model view
 
 
 #================= utils =====================
