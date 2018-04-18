@@ -15,7 +15,8 @@ from functools import wraps
 from flask import abort, flash, g, get_flashed_messages, redirect, Response
 from flask import jsonify, request, url_for, make_response, send_file
 
-
+from flask_babel import gettext as __
+from flask_babel import lazy_gettext as _
 from superset import (
     app, appbuilder, cache, db, results_backend, security, sm, sql_lab, utils,
     viz,
