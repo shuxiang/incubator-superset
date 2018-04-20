@@ -39,7 +39,7 @@ RUN apt-get install -y libffi-dev
 RUN apt-get install -y python-dev 
 RUN apt-get install -y libsasl2-dev 
 RUN apt-get install -y libldap2-dev
-RUN pip install superset==0.22.1
+RUN pip install superset==0.23.0
 RUN pip uninstall -y superset
 
 
