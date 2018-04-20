@@ -18,6 +18,7 @@ tmp
 local_config.py
 env
 superset.egg-info/
+venv/
 app.db
 *.bak
 .idea
