@@ -15,16 +15,193 @@ from functools import wraps
 from flask import abort, flash, g, get_flashed_messages, redirect, Response
 from flask import jsonify, request, url_for, make_response, send_file
 
-
+from flask_babel import gettext as __
+from flask_babel import lazy_gettext as _
 from superset import (
     app, appbuilder, cache, db, results_backend, security, sm, sql_lab, utils,
     viz,
+)
+from .base import (
+    api, BaseSupersetView, CsvResponse, DeleteMixin,
+    generate_download_headers, get_error_msg, get_user_roles,
+    json_error_response, SupersetFilter, SupersetModelView, YamlExportMixin,
 )
 from superset.models.sql_lab import Query, SavedQuery
 import superset.models.core as models
 from superset.utils import has_access, merge_extra_filters, QueryStatus
 from flask_appbuilder.models.sqla.interface import SQLAInterface
 
+from superset.models.custom_models import CompanyReportMap
+
+import sqlparse
+from sqlparse.sql import Token, Identifier, Statement, TokenList, Where
+
+#---------- mysql sql optimistize ---------------------------
+
+def gen_where_filter(f, field_map):
+
+    # ==, eq, equals, equals_to
+    # !=, neq, does_not_equal, not_equal_to
+    # >, gt, <, lt
+    # >=, ge, gte, geq, <=, le, lte, leq
+    # in, not_in
+    # is_null, is_not_null
+    # like
+    # has
+    # any
+    op = f['op']
+    name = f['name']
+    val = f['val']
+    f['_pf_'] = field_map.get(name, name)
+
+    ret = ''
+    if op == 'like':
+        #ret = "%(_pf_)s like '%%%(val)s%%'"%f
+        ret = "%(_pf_)s like '%(val)s'"%f
+    elif op in ('==', 'eq', 'equals', 'equals_to', '='):
+        ret = "%(_pf_)s = '%(val)s'" %f
+    elif op in ('!=', 'neq', 'does_not_equal', 'not_equal_to'):
+        ret = "%(_pf_)s != '%(val)s'" %f
+    elif op in ('>=', 'ge', 'gte', 'geq'):
+        ret = "%(_pf_)s >= '%(val)s'" %f
+    elif op in ('>', 'gt'):
+        ret = "%(_pf_)s > '%(val)s'" %f
+    elif op in ('<=', 'le', 'lte', 'leq'):
+        ret = "%(_pf_)s <= '%(val)s'" %f
+    elif op in ('<', 'lt'):
+        ret = "%(_pf_)s < '%(val)s'" %f
+    elif op == 'in':
+        ret = "%(_pf_)s in %(val)s" %f
+    elif op == 'not_in':
+        ret = "%(_pf_)s not in %(val)s" %f
+    elif op == 'is_null':
+        ret = "%(_pf_)s is null" %f
+    elif op == 'is_not_null':
+        ret = "%(_pf_)s is not null" %f
+    # has any not support
+    return ret
+
+def gen_where(_filters, field_map):
+    fs = []
+    for f in _filters:
+        if  'and' in f:
+            _where = " and ".join([gen_where_filter(subf, field_map) for subf in f['and']])
+            fs.append("( %s )"%_where)
+        elif 'or' in f:
+            _where = " or ".join([gen_where_filter(subf, field_map) for subf in f['or']])
+            fs.append("( %s )"%_where)
+        else:
+            fs.append(gen_where_filter(f, field_map))
+    return fs
+
+def gen_sort(sorts, field_map):
+    qsorts = []
+    for ob in sorts:
+        tf = field_map.get(ob['field'], '').split('.')
+        if len(tf) > 1:
+            qsorts.append("%s.%s %s"%(tf[0], ob['field'], ob['direction']))
+        else:
+            qsorts.append("%s %s"%(ob['field'], ob['direction']))
+
+    qsort = ", ".join(qsorts)
+    return qsort if qsort else ""
+
+def optimize_sql_with_filters_and_sorts(sql, filters, sorts):
+    parsed = sqlparse.parse(sql)
+    stmt = parsed[0]
+
+    _token1s = [] # for count
+    _token2s = [] # for query
+    _fields = {}
+    prev = None
+
+    space = Token('Whitespace', ' ')
+    spaceline = Token('Whitespace', ' \n')
+    tokenlist = TokenList(stmt.tokens)
+
+    def gen_field(_fields, token):
+        if token.get_alias():
+            _fields[token.get_alias()] = "%s.%s"%(token.get_parent_name(), token.get_real_name())
+        else:
+            _fields[token.get_real_name()] = "%s.%s"%(token.get_parent_name(), token.get_real_name())
+
+    for i, token in enumerate(stmt.tokens):
+        if not token.is_whitespace:
+            if prev:
+                # select fields
+                if prev._get_repr_name() and prev._get_repr_name() == 'DML' and getattr(prev, 'tokens', None) == None \
+                        and token._get_repr_name() in ('IdentifierList', 'Identifier'):
+                    # count token
+                    _token1s.append(Token('Identifier', 'count(1) as num'))
+                    _token2s.append(token)
+                    # generate select fields
+                    if token._get_repr_name() == 'Identifier':
+                        gen_field(_fields, token)
+                    else:
+                        for subtoken in token:
+                            if subtoken._get_repr_name() == 'Identifier':
+                                gen_field(_fields, subtoken)
+                # tables: prev is from
+                elif prev._get_repr_name() and prev._get_repr_name() == 'Keyword' and getattr(prev, 'tokens', None) == None \
+                        and token._get_repr_name() in ('IdentifierList', 'Identifier') and 'from' in prev.value:
+                    _token1s.append(token)
+                    _token2s.append(token)
+                    # when not where, append where here
+                    tnext = tokenlist.token_next(tokenlist.token_index(token), skip_ws=True)[1]
+                    if not tnext or tnext._get_repr_name() != 'Where':
+                        fs = gen_where(_filters, _fields)
+                        _where = ' and '.join(fs) if fs else ''
+                        if _where:
+                            where_str = 'where ' + _where + ' \n'
+                            _token1s.append(spaceline)
+                            _token2s.append(spaceline)
+                            _token1s.append(Token('Where', where_str))
+                            _token2s.append(Token('Where', where_str))
+                # where
+                elif token._get_repr_name() == 'Where':
+                    fs = gen_where(_filters, _fields)
+                    _where = ' and '.join(fs) if fs else ''
+                    if _where:
+                        where_str = str(token) + ' and ' + _where + ' \n'
+                        _token1s.append(Token('Where', where_str))
+                        _token2s.append(Token('Where', where_str))
+                    else:
+                        _token1s.append(token)
+                        _token2s.append(token)
+                # other
+                else:
+                    _token1s.append(token)
+                    _token2s.append(token)
+            # select
+            else:
+                _token1s.append(token)
+                _token2s.append(token)
+
+            prev = token
+        else:
+            _token1s.append(token)
+            _token2s.append(token)
+
+    # sort: order by
+    if sorts:
+        order_by = gen_sort(sorts, _fields)
+        if order_by:
+            _token2s.append(spaceline)
+            _token2s.append(Token('Keyword', 'order'))
+            _token2s.append(space)
+            _token2s.append(Token('Keyword', 'by'))
+            _token2s.append(space)
+            _token2s.append(Token('IdentifierList', order_by))
+            _token2s.append(space)
+
+    count_sql =  "".join([str(t) for t in _token1s])
+    query_sql =  "".join([str(t) for t in _token2s])
+    # print _fields
+    return count_sql, query_sql
+
+#---------- end mysql sql optimistize -----------------------
+
+# cros
 CROS_HEADERS = {
     'Access-Control-Allow-Origin': "*",
     'Access-Control-Allow-Credentials': 'true',
@@ -39,10 +216,11 @@ def cros_decorater(func):
         ret.headers.extend(CROS_HEADERS)
         return ret
     return decorated_view
+# end cros
 
 #Get all reports:
 #/report_builder/api/report GET
-@app.route('/report_builder/api/report', methods=('GET', 'OPTIONS'))
+@app.route('/report_builder2/api/report', methods=('GET', 'OPTIONS'))
 @cros_decorater
 def get_all_report():
     #sq = SavedQuery.query.all()
@@ -76,9 +254,12 @@ def get_all_report():
 
 #Get report:
 #/report_builder/api/report/<id> GET
-@app.route('/report_builder/api/report/<int:id>', methods=('GET', 'POST', 'OPTIONS'))
+@app.route('/report_builder2/api/report/<int:id>', methods=('GET', 'POST', 'OPTIONS'))
 @cros_decorater
 def get_one_report(id):
+    return _get_one_report(id)
+
+def _get_one_report(id):
     o = db.session.query(SavedQuery).filter_by(id=id).first()
     desc = {}
     try:
@@ -124,35 +305,19 @@ def get_one_report(id):
         hkey = get_hash_key()
         # # parse config; filters and fields and sorts
         # # order by [{"field": <fieldname>, "direction": <directionname>}]
-        qsort = ", ".join(["_.%s %s"%(ob['field'], ob['direction']) for ob in _order_by])
-        sort = (" order by " + qsort) if qsort else ""
-        # [{"name": <fieldname>, "op": <operatorname>, "val": <argument>}]
-
-        fs = []
-        for f in _filters:
-            if  'and' in f:
-                _where = " and ".join([gen_where_filter(subf) for subf in f['and']])
-                fs.append("( %s )"%_where)
-            elif 'or' in f:
-                _where = " or ".join([gen_where_filter(subf) for subf in f['or']])
-                fs.append("( %s )"%_where)
-            else:
-                fs.append(gen_where_filter(f))
-
-        where = " where "+(" and ".join(fs)) if fs else ""
-
+        # # filter [{"name": <fieldname>, "op": <operatorname>, "val": <argument>}]
         # # sql can't end with `;` , complicated sql use select .. as ..
 
-        count_sql = "SELECT count(1) as num FROM (%s) _ %s"%(sql,where)
-        sql = "SELECT * FROM (%s) _ %s %s LIMIT %s,%s"%(sql, where, sort, (page-1)*per_page, per_page) 
+        count_sql, query_sql = optimize_sql_with_filters_and_sorts(sql, _filters, _order_by)
 
-        print sql, '============='
+        print "count_sql: ", count_sql, '============='
+        print "query_sql: ", query_sql, '============='
 
         if True:
             query = Query(
                 database_id=int(database_id),
                 limit=1000000,#int(app.config.get('SQL_MAX_ROW', None)),
-                sql=sql,
+                sql=query_sql,
                 schema=schema,
                 select_as_cta=False,
                 start_time=utils.now_as_float(),
@@ -193,6 +358,7 @@ def get_one_report(id):
             cdata = sql_lab.get_sql_results(
                         query_id=cquery_id, return_results=True,
                         template_params={})
+            total = sum([d['num'] for d in cdata['data']])
 
             if data['status'] == 'failed':
                 resp = jsonify(data)
@@ -208,8 +374,8 @@ def get_one_report(id):
                     'limit_reached':False,
                     'page':page,
                     'per_page':per_page,
-                    'pages': get_pages(cdata['data'][0]['num'], per_page),
-                    'total':cdata['data'][0]['num'],
+                    'pages': get_pages(total, per_page),
+                    'total':total,
                     'rows':data['query']['rows'],
                     'sort':_order_by,
                     'changed_on':data['query']['changed_on'],
@@ -219,58 +385,17 @@ def get_one_report(id):
                     'status': 'success',
                 })
 
-            resp.headers['x-total-count'] = str(cdata['data'][0]['num'])
+            resp.headers['x-total-count'] = str(total)
             return resp
     
 
     resp = Response('OK')
     return resp
 
-def gen_where_filter(f):
-
-    # ==, eq, equals, equals_to
-    # !=, neq, does_not_equal, not_equal_to
-    # >, gt, <, lt
-    # >=, ge, gte, geq, <=, le, lte, leq
-    # in, not_in
-    # is_null, is_not_null
-    # like
-    # has
-    # any
-    op = f['op']
-    name = f['name']
-    val = f['val']
-
-    ret = ''
-    if op == 'like':
-        #ret = "_.%(name)s like '%%%(val)s%%'"%f
-        ret = "_.%(name)s like '%(val)s'"%f
-    elif op in ('==', 'eq', 'equals', 'equals_to', '='):
-        ret = "_.%(name)s = '%(val)s'" %f
-    elif op in ('!=', 'neq', 'does_not_equal', 'not_equal_to'):
-        ret = "_.%(name)s != '%(val)s'" %f
-    elif op in ('>=', 'ge', 'gte', 'geq'):
-        ret = "_.%(name)s >= '%(val)s'" %f
-    elif op in ('>', 'gt'):
-        ret = "_.%(name)s > '%(val)s'" %f
-    elif op in ('<=', 'le', 'lte', 'leq'):
-        ret = "_.%(name)s <= '%(val)s'" %f
-    elif op in ('<', 'lt'):
-        ret = "_.%(name)s < '%(val)s'" %f
-    elif op == 'in':
-        ret = "_.%(name)s in %(val)s" %f
-    elif op == 'not_in':
-        ret = "_.%(name)s not in %(val)s" %f
-    elif op == 'is_null':
-        ret = "_.%(name)s is null" %f
-    elif op == 'is_not_null':
-        ret = "_.%(name)s is not null" %f
-    # has any not support
-    return ret
 
 # Exporting using xlsx
 # GET request on /report_builder/report/<id>/download_xlsx/
-@app.route('/report_builder/api/report/<int:id>/download/<int:query_id>', methods=('GET', 'OPTIONS'))
+@app.route('/report_builder2/api/report/<int:id>/download/<int:query_id>', methods=('GET', 'OPTIONS'))
 @cros_decorater
 def download_one_report(id, query_id):
     o = db.session.query(SavedQuery).filter_by(id=id).first()
@@ -298,6 +423,94 @@ def download_one_report(id, query_id):
     #    ret = jsonify({'displayfield_set': desc['displayfield_set'], 'data': data['data']})
 
     return ret
+
+
+# New Style Report
+@app.route('/report_builder2/api/report_map/<path:name>', methods=('GET', 'OPTIONS', 'POST', 'PUT'))
+@cros_decorater
+def report_map_api(name='ACTION'):
+    if request.method == 'POST':
+        req = request.json
+        company = req['company']
+        api_name = req['api_name']
+
+        if db.session.query(CompanyReportMap).filter_by(company=company, api_name=api_name).count() > 0:
+            resp = Response('exist report of company: %s , api name: %s '%(company, api_name))
+            resp.status_code = 422
+            return resp
+
+        crm = CompanyReportMap()
+        crm.company = company
+        crm.api_name = api_name
+        crm.remark = req.get('remark', '')
+        crm.report_id = req['report_id']
+
+        db.session.add(crm)
+        db.session.commit()
+
+        return jsonify(req)
+
+    elif request.method == 'PUT':
+        req = request.json
+        company = req['company']
+        api_name = req['api_name']
+
+        crm = db.session.query(CompanyReportMap).filter_by(company=company, api_name=api_name).first()
+        if not crm:
+            esp = Response('Not Found')
+            resp.status_code = 404
+            return resp
+        else:
+            crm.report_id = req['report_id']
+            crm.remark = req.get('remark', crm.remark)
+        db.session.commit()
+
+        return jsonify(req)
+
+    elif request.method == 'OPTIONS':
+        res = [{'company':c.company, 'api_name':c.api_name, 'report_id':c.report_id, 'remark':c.remark} for c in db.session.query(CompanyReportMap).all()]
+        return jsonify(res)
+    # GET
+    company = request.args.get('company', '')
+    o = db.session.query(CompanyReportMap).filter_by(company=company, api_name=name).first()
+    if not o:
+        resp = Response('Not Found')
+        resp.status_code = 404
+        return resp
+
+    return _get_one_report(o.report_id)
+
+
+
+# custom model view
+class CompanyReportMapView(SupersetModelView, DeleteMixin):  # noqa
+    datamodel = SQLAInterface(CompanyReportMap)
+
+    list_title = _('List CompanyReportMap')
+    show_title = _('Show CompanyReportMap')
+    add_title = _('Add CompanyReportMap')
+    edit_title = _('Edit CompanyReportMap')
+
+    list_columns = [
+        'id', 'company', 'api_name', 'report_id', 'remark']
+    order_columns = [
+        'company', 'api_name', 'report_id']
+    search_exclude_columns = (
+        'company', 'api_name', 'report_id',)
+    add_columns = list_columns
+    edit_columns = list_columns
+    show_columns = list_columns
+
+appbuilder.add_view(
+    CompanyReportMapView,
+    'CompanyReportMap',
+    label=__('CompanyReportMapView'),
+    icon='fa-database',
+    category='Sources',
+    category_label=__('Sources'),
+    category_icon='fa-database',)
+# end custom model view
+
 
 #================= utils =====================
 code_map = ( 
