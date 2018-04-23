@@ -125,41 +125,56 @@ def optimize_sql_with_filters_and_sorts(sql, filters, sorts):
         else:
             _fields[token.get_real_name()] = "%s.%s"%(token.get_parent_name(), token.get_real_name())
 
+    def append_where(_filters, _fields):
+        fs = gen_where(_filters, _fields)
+        _where = ' and '.join(fs) if fs else ''
+        if _where:
+            where_str = 'where ' + _where + ' \n'
+            _token1s.append(spaceline)
+            _token2s.append(spaceline)
+            _token1s.append(Token('Where', where_str))
+            _token2s.append(Token('Where', where_str))
+
     for i, token in enumerate(stmt.tokens):
         if not token.is_whitespace:
             if prev:
+                prev_name = prev._get_repr_name()
+                token_name = token._get_repr_name()
                 # select fields
-                if prev._get_repr_name() and prev._get_repr_name() == 'DML' and getattr(prev, 'tokens', None) == None \
-                        and token._get_repr_name() in ('IdentifierList', 'Identifier'):
+                if prev_name and prev_name == 'DML' and getattr(prev, 'tokens', None) == None and token_name in ('IdentifierList', 'Identifier'):
                     # count token
                     _token1s.append(Token('Identifier', 'count(1) as num'))
                     _token2s.append(token)
                     # generate select fields
-                    if token._get_repr_name() == 'Identifier':
+                    if token_name == 'Identifier':
                         gen_field(_fields, token)
                     else:
                         for subtoken in token:
                             if subtoken._get_repr_name() == 'Identifier':
                                 gen_field(_fields, subtoken)
                 # tables: prev is from
-                elif prev._get_repr_name() and prev._get_repr_name() == 'Keyword' and getattr(prev, 'tokens', None) == None \
-                        and token._get_repr_name() in ('IdentifierList', 'Identifier') and 'from' in prev.value:
+                elif prev_name and prev_name == 'Keyword' and getattr(prev, 'tokens', None) == None \
+                        and token_name in ('IdentifierList', 'Identifier') and 'from' in prev.value:
                     _token1s.append(token)
                     _token2s.append(token)
-                    # when not where, append where here
+                    # when not where and not join append where here
                     tnext = tokenlist.token_next(tokenlist.token_index(token), skip_ws=True)[1]
-                    if not tnext or tnext._get_repr_name() != 'Where':
-                        fs = gen_where(_filters, _fields)
-                        _where = ' and '.join(fs) if fs else ''
-                        if _where:
-                            where_str = 'where ' + _where + ' \n'
-                            _token1s.append(spaceline)
-                            _token2s.append(spaceline)
-                            _token1s.append(Token('Where', where_str))
-                            _token2s.append(Token('Where', where_str))
+                    if not tnext or (tnext._get_repr_name() != 'Where' and not (tnext._get_repr_name() == 'Keyword' and 'join' in str(tnext).lower())):
+                        append_where(filters, _fields)
+
+                # join: join on sqlparse.sql.Comparison
+                elif token_name == 'Comparison' and prev_name == 'Keyword' and 'on' in str(prev).lower():
+                    _token1s.append(token)
+                    _token2s.append(token)
+
+                    # when join end; append where
+                    tnext = tokenlist.token_next(tokenlist.token_index(token), skip_ws=True)[1]
+                    if not tnext or tnext._get_repr_name() == 'Keyword' and 'union' in str(tnext).lower():
+                        append_where(filters, _fields)
+
                 # where
-                elif token._get_repr_name() == 'Where':
-                    fs = gen_where(_filters, _fields)
+                elif token_name == 'Where':
+                    fs = gen_where(filters, _fields)
                     _where = ' and '.join(fs) if fs else ''
                     if _where:
                         where_str = str(token) + ' and ' + _where + ' \n'
@@ -170,6 +185,7 @@ def optimize_sql_with_filters_and_sorts(sql, filters, sorts):
                         _token2s.append(token)
                 # other
                 else:
+                    print 'other======', type(token), token_name, token
                     _token1s.append(token)
                     _token2s.append(token)
             # select
@@ -220,7 +236,7 @@ def cros_decorater(func):
 
 #Get all reports:
 #/report_builder/api/report GET
-@app.route('/report_builder2/api/report', methods=('GET', 'OPTIONS'))
+@app.route('/report_builder/api2/report', methods=('GET', 'OPTIONS'))
 @cros_decorater
 def get_all_report():
     #sq = SavedQuery.query.all()
@@ -254,7 +270,7 @@ def get_all_report():
 
 #Get report:
 #/report_builder/api/report/<id> GET
-@app.route('/report_builder2/api/report/<int:id>', methods=('GET', 'POST', 'OPTIONS'))
+@app.route('/report_builder/api2/report/<int:id>', methods=('GET', 'POST', 'OPTIONS'))
 @cros_decorater
 def get_one_report(id):
     return _get_one_report(id)
@@ -309,6 +325,7 @@ def _get_one_report(id):
         # # sql can't end with `;` , complicated sql use select .. as ..
 
         count_sql, query_sql = optimize_sql_with_filters_and_sorts(sql, _filters, _order_by)
+        query_sql = query_sql + " LIMIT %s,%s"%((page-1)*per_page, per_page)
 
         print "count_sql: ", count_sql, '============='
         print "query_sql: ", query_sql, '============='
@@ -395,7 +412,7 @@ def _get_one_report(id):
 
 # Exporting using xlsx
 # GET request on /report_builder/report/<id>/download_xlsx/
-@app.route('/report_builder2/api/report/<int:id>/download/<int:query_id>', methods=('GET', 'OPTIONS'))
+@app.route('/report_builder/api2/report/<int:id>/download/<int:query_id>', methods=('GET', 'OPTIONS'))
 @cros_decorater
 def download_one_report(id, query_id):
     o = db.session.query(SavedQuery).filter_by(id=id).first()
@@ -426,7 +443,7 @@ def download_one_report(id, query_id):
 
 
 # New Style Report
-@app.route('/report_builder2/api/report_map/<path:name>', methods=('GET', 'OPTIONS', 'POST', 'PUT'))
+@app.route('/report_builder/api2/report_map/<path:name>', methods=('GET', 'OPTIONS', 'POST', 'PUT'))
 @cros_decorater
 def report_map_api(name='ACTION'):
     if request.method == 'POST':
