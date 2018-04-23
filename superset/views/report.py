@@ -185,7 +185,6 @@ def optimize_sql_with_filters_and_sorts(sql, filters, sorts):
                         _token2s.append(token)
                 # other
                 else:
-                    print 'other======', type(token), token_name, token
                     _token1s.append(token)
                     _token2s.append(token)
             # select
