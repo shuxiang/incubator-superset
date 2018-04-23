@@ -498,36 +498,6 @@ def report_map_api(name='ACTION'):
 
 
 
-# custom model view
-class CompanyReportMapView(SupersetModelView, DeleteMixin):  # noqa
-    datamodel = SQLAInterface(CompanyReportMap)
-
-    list_title = _('List CompanyReportMap')
-    show_title = _('Show CompanyReportMap')
-    add_title = _('Add CompanyReportMap')
-    edit_title = _('Edit CompanyReportMap')
-
-    list_columns = [
-        'id', 'company', 'api_name', 'report_id', 'remark']
-    order_columns = [
-        'company', 'api_name', 'report_id']
-    search_exclude_columns = (
-        'company', 'api_name', 'report_id',)
-    add_columns = list_columns
-    edit_columns = list_columns
-    show_columns = list_columns
-
-appbuilder.add_view(
-    CompanyReportMapView,
-    'CompanyReportMap',
-    label=__('CompanyReportMapView'),
-    icon='fa-database',
-    category='Sources',
-    category_label=__('Sources'),
-    category_icon='fa-database',)
-# end custom model view
-
-
 #================= utils =====================
 code_map = ( 
       'a' , 'b' , 'c' , 'd' , 'e' , 'f' , 'g' , 'h' , 

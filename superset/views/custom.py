@@ -379,14 +379,13 @@ class CompanyReportMapView(SupersetModelView, DeleteMixin):  # noqa
     add_title = _('Add CompanyReportMap')
     edit_title = _('Edit CompanyReportMap')
 
-    list_columns = [
-        'id', 'company', 'api_name', 'report_id', 'remark']
+    list_columns = ['id', 'company', 'api_name', 'report_id', 'remark']
     order_columns = [
         'company', 'api_name', 'report_id']
     search_exclude_columns = (
         'company', 'api_name', 'report_id',)
-    add_columns = list_columns
-    edit_columns = list_columns
+    add_columns = ['company', 'api_name', 'report_id', 'remark']
+    edit_columns = add_columns
     show_columns = list_columns
 
 appbuilder.add_view(
