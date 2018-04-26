@@ -314,7 +314,7 @@ def download_one_report(id, query_id):
 
 
 # New Style Report
-@app.route('/report_builder/api/report_map/<path:name>', methods=('GET', 'OPTIONS', 'POST', 'PUT'))
+@app.route('/report_builder/api/report_map/<name>', methods=('GET', 'OPTIONS', 'POST', 'PUT'))
 @cros_decorater
 def report_map_api(name='ACTION'):
     if request.method == 'POST':
@@ -359,7 +359,7 @@ def report_map_api(name='ACTION'):
         res = [{'company':c.company, 'api_name':c.api_name, 'report_id':c.report_id, 'remark':c.remark} for c in db.session.query(CompanyReportMap).all()]
         return jsonify(res)
     # GET
-    company = request.args.get('company', '')
+    company = request.args.get('company', '') or request.args.get('company_id', '')
     o = db.session.query(CompanyReportMap).filter_by(company=company, api_name=name).first()
     if not o:
         resp = Response('Not Found')
