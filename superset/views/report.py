@@ -235,7 +235,7 @@ def cros_decorater(func):
 
 #Get all reports:
 #/report_builder/api/report GET
-@app.route('/report_builder/api2/report', methods=('GET', 'OPTIONS'))
+@app.route('/superset/report_builder/api2/report', methods=('GET', 'OPTIONS'))
 @cros_decorater
 def api2_get_all_report():
     #sq = SavedQuery.query.all()
@@ -269,7 +269,7 @@ def api2_get_all_report():
 
 #Get report:
 #/report_builder/api/report/<id> GET
-@app.route('/report_builder/api2/report/<int:id>', methods=('GET', 'POST', 'OPTIONS'))
+@app.route('/superset/report_builder/api2/report/<int:id>', methods=('GET', 'POST', 'OPTIONS'))
 @cros_decorater
 def api2_get_one_report(id):
     return _get_one_report(id)
@@ -411,7 +411,7 @@ def _get_one_report(id):
 
 # Exporting using xlsx
 # GET request on /report_builder/report/<id>/download_xlsx/
-@app.route('/report_builder/api2/report/<int:id>/download/<int:query_id>', methods=('GET', 'OPTIONS'))
+@app.route('/superset/report_builder/api2/report/<int:id>/download/<int:query_id>', methods=('GET', 'OPTIONS'))
 @cros_decorater
 def api2_download_one_report(id, query_id):
     o = db.session.query(SavedQuery).filter_by(id=id).first()
@@ -442,7 +442,7 @@ def api2_download_one_report(id, query_id):
 
 
 # New Style Report
-@app.route('/report_builder/api2/report_map/<name>', methods=('GET', 'OPTIONS', 'POST', 'PUT'))
+@app.route('/superset/report_builder/api2/report_map/<name>', methods=('GET', 'OPTIONS', 'POST', 'PUT'))
 @cros_decorater
 def api2_report_map_api(name='ACTION'):
     if request.method == 'POST':
