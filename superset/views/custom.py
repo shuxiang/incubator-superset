@@ -436,7 +436,7 @@ def gen_csv(title, table, fname):
     data = [[c.encode('utf8') if type(c) is unicode else c for c in r] for r in [title]+table]
     cw.writerows(data)
     output = make_response(si.getvalue())
-    output.headers["Content-Disposition"] = "attachment; filename=%s.csv"%fname
+    output.headers["Content-Disposition"] = "attachment; filename=%s.csv"%fname.encode('utf8')
     output.headers["Content-type"] = "text/csv"
     return output
 
@@ -459,7 +459,7 @@ def gen_xlsx(title, table, fname):
     
     return send_file(output, 
         mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", 
-        as_attachment=True, attachment_filename='%s.xlsx'%fname)
+        as_attachment=True, attachment_filename='%s.xlsx'%fname.encode('utf8'))
 
 
 # # SELECT[ALL|DISTINCT|DISTINCTROW|TOP]
