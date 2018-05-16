@@ -31,6 +31,7 @@ RUN pip install Flask-Principal
 RUN pip install requests
 RUN pip install xmltodict
 RUN pip install xlsxwriter
+RUN pip install sqlparse
 
 # install relative modules
 RUN apt-get install -y build-essential 

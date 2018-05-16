@@ -157,8 +157,9 @@ def _get_one_report(id):
         # # sql can't end with `;` , complicated sql use select .. as ..
 
         count_sql = "SELECT count(1) as num FROM (%s) _ %s"%(sql,where)
-        sql = "SELECT * FROM (%s) _ %s %s LIMIT %s,%s"%(sql, where, sort, (page-1)*per_page, per_page) 
-
+        down_sql = "SELECT * FROM (%s) _ %s %s "%(sql, where, sort)
+        sql = "SELECT * FROM (%s) _ %s %s LIMIT %s,%s"%(sql, where, sort, (page-1)*per_page, per_page)
+        
         print sql, '============='
 
         if True:
@@ -194,10 +195,27 @@ def _get_one_report(id):
             )
             session.add(cquery)
 
+            dquery = Query(
+                database_id=int(database_id),
+                limit=1000000,#int(app.config.get('SQL_MAX_ROW', None)),
+                sql=down_sql,
+                schema=schema,
+                select_as_cta=False,
+                start_time=utils.now_as_float(),
+                tab_name=label,
+                status=QueryStatus.RUNNING,
+                sql_editor_id=hkey[0]+hkey[1],
+                tmp_table_name='',
+                user_id=1, #int(g.user.get_id()),
+                client_id=hkey[0]+hkey[2],
+            )
+            session.add(dquery)
+
             session.flush()
             session.commit()
-            query_id = query.id
-            cquery_id =cquery.id
+            query_id  = query.id
+            cquery_id = cquery.id
+            dquery_id = dquery.id
 
             data = sql_lab.get_sql_results(
                         query_id=query_id, return_results=True,
@@ -228,7 +246,7 @@ def _get_one_report(id):
                     'changed_on':data['query']['changed_on'],
                     'displayfield_set': desc['displayfield_set'],
                     'q': _q,
-                    'report_file': url_for('download_one_report', id=id, query_id=data['query_id']),
+                    'report_file': url_for('download_one_report', id=id, query_id=dquery_id)#query_id=data['query_id']),
                     'status': 'success',
                 })
 
