@@ -416,7 +416,7 @@ def _get_one_report(id):
                     'changed_on':data['query']['changed_on'],
                     'displayfield_set': desc['displayfield_set'],
                     'q': _q,
-                    'report_file': url_for('download_one_report', id=id, query_id=dquery_id)#query_id=data['query_id']),
+                    'report_file': url_for('download_one_report', id=id, query_id=dquery_id), #query_id=data['query_id']),
                     'status': 'success',
                 })
 
