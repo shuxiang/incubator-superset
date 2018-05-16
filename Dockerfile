@@ -6,6 +6,7 @@ RUN apt-get update
 RUN apt-get install -y curl
 RUN apt-get install -y libmysqld-dev
 RUN apt-get install -y mysql-client
+RUN apt-get install -y gnupg2
 
 # install nodejs yarn npm
 RUN curl -o- https://raw.githubusercontent.com/creationix/nvm/v0.33.8/install.sh | bash
