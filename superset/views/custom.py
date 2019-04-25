@@ -143,10 +143,10 @@ def _get_one_report(id):
 
         fs = []
         for f in _filters:
-            if  'and' in f:
+            if  'and' in f and f['and']:
                 _where = " and ".join([gen_where_filter(subf) for subf in f['and']])
                 fs.append("( %s )"%_where)
-            elif 'or' in f:
+            elif 'or' in f and f['or']:
                 _where = " or ".join([gen_where_filter(subf) for subf in f['or']])
                 fs.append("( %s )"%_where)
             else:
