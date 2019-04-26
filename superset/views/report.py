@@ -229,6 +229,7 @@ def cros_decorater(func):
     def decorated_view(*args, **kwargs):
         ret = func(*args, **kwargs)
         ret.headers.extend(CROS_HEADERS)
+        db.session.close()
         return ret
     return decorated_view
 # end cros
